@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <title>Conference Audio</title>
+   <link rel="stylesheet" type="text/css" href="css/bootstrap.css">
+    <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="css/bootstrap-theme.min.css">
+  <script src="/demos/menu.js"></script>
+</head>
+<body>
+ <div class="navbar navbar-inverse" style="background-color: black;">
+    <div class="navbar-header" >
+     <a class="navbar-brand" href="treewel.php" style="font-size: 30px;">TalkingRoom</a>
+      <p>Here We Talk To Much!!</p>
+   </div>         
+ </div>
+ <div class="container">
+    <section class="make-center">
+    <input type="text" id="room-id" value="abcdef" autocorrect=off autocapitalize=off size=20>
+    <button id="open-room" class="btn btn-sucess">Ouvrir Salon</button>
+    <button id="join-room" class="btn btn-sucess">Joindre Salon</button>
+    <button id="open-or-join-room" class=" btn btn-sucess">Ouvrir ou Joindre Automatiquement</button>
+
+    <div id="room-urls" style="text-align: center;display: none;background: #F1EDED;margin: 15px -10px;border: 1px solid rgb(189, 189, 189);border-left: 0;border-right: 0;"></div>
+
+    <div id="audios-container"></div>
+  </section>
+ </div>
+
+<script src="/dist/RTCMultiConnection.min.js"></script>
+<script src="/node_modules/webrtc-adapter/out/adapter.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+
+<link rel="stylesheet" href="/dev/getHTMLMediaElement.css">
+<script src="/dev/getHTMLMediaElement.js"></script>
+<script>
+// ......................................................
+// .......................UI Code........................
+// ......................................................
+document.getElementById('open-room').onclick = function() {
+    disableInputButtons();
+    connection.open(document.getElementById('room-id').value, function() {
+        showRoomURL(connection.sessionid);
+    });
+};
+
+document.getElementById('join-room').onclick = function() {
+    disableInputButtons();
+    connection.join(document.getElementById('room-id').value);
+};
+
+document.getElementById('open-or-join-room').onclick = function() {
+    disableInputButtons();
+    connection.openOrJoin(document.getElementById('room-id').value, function(isRoomExist, roomid) {
+        if (!isRoomExist) {
+            showRoomURL(roomid);
+        }
+    });
+};
+
+// ......................................................
+// ..................RTCMultiConnection Code.............
+// ......................................................
+
+var connection = new RTCMultiConnection();
+
+// by default, socket.io server is assumed to be deployed on your own URL
+connection.socketURL = '/';
+
+// comment-out below line if you do not have your own socket.io server
+// connection.socketURL = 'https://rtcmulticonnection.herokuapp.com:443/';
+
+connection.socketMessageEvent = 'audio-conference-demo';
+
+connection.session = {
+    audio: true,
+    video: false
+};
+
+connection.mediaConstraints = {
+    audio: true,
+    video: false
+};
+
+connection.sdpConstraints.mandatory = {
+    OfferToReceiveAudio: true,
+    OfferToReceiveVideo: false
+};
+
+// https://www.rtcmulticonnection.org/docs/iceServers/
+// use your own TURN-server here!
+connection.iceServers = [{
+    'urls': [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun.l.google.com:19302?transport=udp',
+    ]
+}];
+
+connection.audiosContainer = document.getElementById('audios-container');
+connection.onstream = function(event) {
+    var width = parseInt(connection.audiosContainer.clientWidth / 2) - 20;
+    var mediaElement = getHTMLMediaElement(event.mediaElement, {
+        title: event.userid,
+        buttons: ['full-screen'],
+        width: width,
+        showOnMouseEnter: false
+    });
+
+    connection.audiosContainer.appendChild(mediaElement);
+
+    setTimeout(function() {
+        mediaElement.media.play();
+    }, 5000);
+
+    mediaElement.id = event.streamid;
+};
+
+connection.onstreamended = function(event) {
+    var mediaElement = document.getElementById(event.streamid);
+    if (mediaElement) {
+        mediaElement.parentNode.removeChild(mediaElement);
+    }
+};
+
+function disableInputButtons() {
+    document.getElementById('open-or-join-room').disabled = true;
+    document.getElementById('open-room').disabled = true;
+    document.getElementById('join-room').disabled = true;
+    document.getElementById('room-id').disabled = true;
+}
+
+// ......................................................
+// ......................Handling Room-ID................
+// ......................................................
+
+function showRoomURL(roomid) {
+    var roomHashURL = '#' + roomid;
+    var roomQueryStringURL = '?roomid=' + roomid;
+
+    var html = '<h2>Unique URL for your room:</h2><br>';
+
+    html += 'Hash URL: <a href="' + roomHashURL + '" target="_blank">' + roomHashURL + '</a>';
+    html += '<br>';
+    html += 'QueryString URL: <a href="' + roomQueryStringURL + '" target="_blank">' + roomQueryStringURL + '</a>';
+
+    var roomURLsDiv = document.getElementById('room-urls');
+    roomURLsDiv.innerHTML = html;
+
+    roomURLsDiv.style.display = 'block';
+}
+
+(function() {
+    var params = {},
+        r = /([^&=]+)=?([^&]*)/g;
+
+    function d(s) {
+        return decodeURIComponent(s.replace(/\+/g, ' '));
+    }
+    var match, search = window.location.search;
+    while (match = r.exec(search.substring(1)))
+        params[d(match[1])] = d(match[2]);
+    window.params = params;
+})();
+
+var roomid = '';
+if (localStorage.getItem(connection.socketMessageEvent)) {
+    roomid = localStorage.getItem(connection.socketMessageEvent);
+} else {
+    roomid = connection.token();
+}
+document.getElementById('room-id').value = roomid;
+document.getElementById('room-id').onkeyup = function() {
+    localStorage.setItem(connection.socketMessageEvent, this.value);
+};
+
+var hashString = location.hash.replace('#', '');
+if (hashString.length && hashString.indexOf('comment-') == 0) {
+    hashString = '';
+}
+
+var roomid = params.roomid;
+if (!roomid && hashString.length) {
+    roomid = hashString;
+}
+
+if (roomid && roomid.length) {
+    document.getElementById('room-id').value = roomid;
+    localStorage.setItem(connection.socketMessageEvent, roomid);
+
+    // auto-join-room
+    (function reCheckRoomPresence() {
+        connection.checkPresence(roomid, function(isRoomExist) {
+            if (isRoomExist) {
+                connection.join(roomid);
+                return;
+            }
+
+            setTimeout(reCheckRoomPresence, 5000);
+        });
+    })();
+
+    disableInputButtons();
+}
+</script>
+
+   <footer id="footer" style="background:black; opacity:0.9">
+        <div class="footer-top">
+        <div class="container-fluid">      
+        <div class="row">
+          <div class="col-md-12">
+          <h3 style="color:white;">TalkingRoom</h3>
+          <p style="color:white;">Here We Talk Too Much!!</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-3">
+              <h4 style="color:white;"> <span class="glyphicon glyphicon-paperclip"></span> Our Social Media</h4>
+              <ul>
+                <a href="https://www.facebook.com/profile.php?id=100050672801464"><i class="fa fa-facebook-square" style="font-size:36px;"></i></a>
+                <a href="#"><i class="fa fa-whatsapp" style="font-size:36px;"></i></a> 
+                <a href="https://www.instagram.com/ce_que_je_pense9/"><i class="fa fa-instagram" style="font-size:36px"></i></a>
+                    <a href="https://twitter.com/ABDEL45920912"><i class="fa fa-twitter" style="font-size:36px"></i></a>
+              </ul>
+          </div>
+          <div class="col-md-4">
+              <h4 style="color:white;"> <span class="glyphicon glyphicon-phone"></span> Contact Us</h4>
+              <p  style="color:white;"> <strong>Tel: (+00237) 658 415 339</strong><br/>
+                  <strong>Email: litapo489@gmail.com</strong><br/>
+              </p>
+          </div>
+          
+          <div class="col-md-5">
+            <h6 style="color:white;"><span class="glyphicon glyphicon-bullhorn"></span> Our NewsLetter</h6>
+                <p style="color:white;">
+                        Connecter vous ici  pour avoir de nos nouvelles de temps en temps.
+                </p>
+              <form action="footer_traite.php" method="post" style="color:white;">
+                <input type="text" name="email" class="form-control" style="color:black;"> 
+                <input type="submit" value="subscribe" class="btn" style="color:black;">
+                </form>
+          </div>
+        </div>
+          
+          
+            <div class="container-fluid text-center" style="color:white;">
+              <div class="copyright"><strong>© copyright 2020 </strong>All Rights Reserved</div>
+            </div>
+            <div class="credits text-center" style="color:white;">
+              Constructed by <strong><a href="">POLA LITA ABDEL AZIZ</a> </strong>
+            </div>
+    </footer> 
+  <script src="https://www.webrtc-experiment.com/common.js"></script>
+</body>
+</html>
